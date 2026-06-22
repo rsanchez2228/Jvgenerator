@@ -196,7 +196,6 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Row {row}: Amount column has a non-numeric value.")
                 continue
 
-            # REMOVED: amount <= 0 check. Changed to allow zero amounts, only flags negatives.
             if amount < 0:
                 detailed_errors.append(f"Row {row}: Amount value cannot be negative.")
             elif drcr_flag not in ["DR", "CR"]:
@@ -208,7 +207,9 @@ def process_and_validate_jv(uploaded_file):
                     total_credit += amount
                 
                 amount_formatted = f"{amount:.2f}"
-                sap_line = f"D|{row-6}|{fund if fund else '100000'}|{gl_account}|{bus_area if bus_area else '1331'}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
+                
+                # UPDATED: Replaced the '100000' and '1331' fallbacks to pass true blanks if left empty
+                sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
         if len(detailed_errors) > 0:
