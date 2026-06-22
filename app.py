@@ -59,7 +59,6 @@ def create_jv_template():
     ws1["I1"].font = Font(name="Segoe UI", size=11, bold=True, color="1F4E78")
     ws1["I1"].border = THIN_BORDER
 
-    # Template cell generates completely empty now (no default fallback placeholder text)
     ws1["I2"] = ""
     ws1["I2"].number_format = "@"
     ws1["I2"].font = FONT_BODY
@@ -129,7 +128,7 @@ def process_and_validate_jv(uploaded_file):
     try:
         wb = openpyxl.load_workbook(uploaded_file, data_only=True)
         if "JV Upload Form" not in wb.sheetnames:
-            return False, ["Invalid Template: Missing 'JV Upload Form' sheet."], 0, 0, None
+            return False, ["Workbook Structure Error: Missing sheet named 'JV Upload Form'."], 0, 0, None
 
         ws = wb["JV Upload Form"]
         
@@ -137,8 +136,6 @@ def process_and_validate_jv(uploaded_file):
         post_date_raw = str(ws["C2"].value or "").strip()
         reference = str(ws["F1"].value or "T1919").strip()
         header_text = str(ws["F2"].value or f"Transmittal Accrual {datetime.today().strftime('%Y')}").strip()
-        
-        # Pull posting period string value
         posting_period = str(ws["I2"].value or "").strip()
         
         def is_invalid_date(date_str):
@@ -150,19 +147,19 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
-        # UPDATED: Direct line and column error messaging for missing Posting Period
+        # UPDATED: Comprehensive, structural field error messaging explicitly pinpointing cell coordinates
         if not posting_period:
-            return False, ["Missing 'Posting Period'! Please populate Cell I2 (Row: 2, Column: 9) before uploading."], 0, 0, None
+            return False, ["Missing Required Field: 'Posting Period' value is completely empty. Location: Cell I2 (Row 2, Column 9)"], 0, 0, None
 
         if not doc_date_raw:
-            return False, ["'Document Date' (Cell C1, Row: 1, Column: 3) cannot be empty!"], 0, 0, None
+            return False, ["Missing Required Field: 'Document Date' value is completely empty. Location: Cell C1 (Row 1, Column 3)"], 0, 0, None
         if is_invalid_date(doc_date_raw):
-            return False, [f"'Document Date' [{doc_date_raw}] at Cell C1 (Row: 1, Column: 3) must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
+            return False, [f"Invalid Value Error: 'Document Date' [{doc_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C1 (Row 1, Column 3)"], 0, 0, None
 
         if not post_date_raw:
-            return False, ["'Posting Date' (Cell C2, Row: 2, Column: 3) cannot be empty!"], 0, 0, None
+            return False, ["Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)"], 0, 0, None
         if is_invalid_date(post_date_raw):
-            return False, [f"'Posting Date' [{post_date_raw}] at Cell C2 (Row: 2, Column: 3) must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
+            return False, [f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)"], 0, 0, None
             
         total_debit = 0.0
         total_credit = 0.0
@@ -186,38 +183,38 @@ def process_and_validate_jv(uploaded_file):
                 continue
 
             if fund and (len(fund) != 6 or not fund.isdigit()):
-                detailed_errors.append(f"Row {row}, Column 2 (Fund): Must be exactly 6 digits (Found: '{fund}')")
+                detailed_errors.append(f"Format Constraint Mismatch: 'Fund' must be exactly 6 digits. Location: Cell B{row} (Row {row}, Column 2) - Found: '{fund}'")
                 continue
                 
             if not gl_account:
-                detailed_errors.append(f"Row {row}, Column 3 (GL acct): Missing GL Account value")
+                detailed_errors.append(f"Missing Value: Field 'GL acct' cannot be empty. Location: Cell C{row} (Row {row}, Column 3)")
                 continue
             elif len(gl_account) != 6 or not gl_account.isdigit():
-                detailed_errors.append(f"Row {row}, Column 3 (GL acct): Must be exactly 6 digits (Found: '{gl_account}')")
+                detailed_errors.append(f"Format Constraint Mismatch: 'GL acct' must be exactly 6 digits. Location: Cell C{row} (Row {row}, Column 3) - Found: '{gl_account}'")
                 continue
 
             if bus_area and (len(bus_area) != 4 or not bus_area.isdigit()):
-                detailed_errors.append(f"Row {row}, Column 4 (Business area): Must be exactly 4 digits (Found: '{bus_area}')")
+                detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
                 continue
 
             if func_area and (len(func_area) != 7 or not func_area.isdigit()):
-                detailed_errors.append(f"Row {row}, Column 5 (Functional area): Must be exactly 7 digits (Found: '{func_area}')")
+                detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must be exactly 7 digits. Location: Cell E{row} (Row {row}, Column 5) - Found: '{func_area}'")
                 continue
 
             if cost_center and not re.match(r"^\d{8}-\d{6}$", cost_center):
-                detailed_errors.append(f"Row {row}, Column 6 (Cost Center): Must fit 8digits-6digits template format (Found: '{cost_center}')")
+                detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must adhere to 8digits-6digits mask. Location: Cell F{row} (Row {row}, Column 6) - Found: '{cost_center}'")
                 continue
 
             try:
                 amount = float(amount_val or 0.0)
             except ValueError:
-                detailed_errors.append(f"Row {row}, Column 8 (Amount): Non-numeric structural value detected.")
+                detailed_errors.append(f"Data Type Error: 'Amount' column contains a non-numeric string value. Location: Cell H{row} (Row {row}, Column 8)")
                 continue
 
             if amount < 0:
-                detailed_errors.append(f"Row {row}, Column 8 (Amount): Values cannot be negative numbers.")
+                detailed_errors.append(f"Value Constraint Error: 'Amount' value cannot be negative numbers. Location: Cell H{row} (Row {row}, Column 8)")
             elif drcr_flag not in ["DR", "CR"]:
-                detailed_errors.append(f"Row {row}, Column 9 (DR/CR): Format must explicitly say 'DR' or 'CR'.")
+                detailed_errors.append(f"Value Constraint Error: 'DR/CR' column choice must be explicitly written as 'DR' or 'CR'. Location: Cell I{row} (Row {row}, Column 9)")
             else:
                 if drcr_flag == "DR":
                     total_debit += amount
@@ -232,13 +229,13 @@ def process_and_validate_jv(uploaded_file):
             return False, detailed_errors, total_debit, total_credit, None
 
         if abs(total_debit - total_credit) > 0.01:
-            return False, ["Out of Balance! Total Debits must exactly equal Total Credits."], total_debit, total_credit, None
+            return False, ["Calculation Discrepancy Error: Out of Balance! Aggregate Sum of Debits must match Credits exactly."], total_debit, total_credit, None
 
         txt_content = "".join(sap_lines)
         return True, [], total_debit, total_credit, txt_content
 
     except Exception as e:
-        return False, [f"Could not parse spreadsheet data layout: {str(e)}"], 0, 0, None
+        return False, [f"Fatal Parse Error: Layout schema cannot be checked. Technical details: {str(e)}"], 0, 0, None
 
 
 # ==========================================
