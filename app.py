@@ -68,7 +68,7 @@ st.markdown("""
         margin-bottom: 0.5rem;
     }
     </style>
-""", unsafe_index=True, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 # Custom Rendered Title Block
 st.markdown('<div class="main-title">📊 Treasury Management Web Console</div>', unsafe_allow_html=True)
