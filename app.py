@@ -43,7 +43,8 @@ def create_jv_template():
         ("Posting Date (YYYYMMDD):", "B2"),
         ("Reference:", "E1"),
         ("Header Text:", "E2"),
-        ("Control Total (Credits):", "H1")
+        ("Control Total (Credits):", "H1"),
+        ("Posting Period (MM):", "H2")
     ]
     
     for label_text, cell_coord in header_fields:
@@ -57,6 +58,13 @@ def create_jv_template():
     ws1["I1"].number_format = "$#,##0.00"
     ws1["I1"].font = Font(name="Segoe UI", size=11, bold=True, color="1F4E78")
     ws1["I1"].border = THIN_BORDER
+
+    # UPDATED: Template cell generates completely empty now (no default fallback placeholder text)
+    ws1["I2"] = ""
+    ws1["I2"].number_format = "@"
+    ws1["I2"].font = FONT_BODY
+    ws1["I2"].border = THIN_BORDER
+    ws1["I2"].alignment = Alignment(horizontal="center", vertical="center")
     
     for input_cell in ["C1", "C2", "F1", "F2"]:
         ws1[input_cell].number_format = "@"
@@ -108,7 +116,6 @@ def create_jv_template():
                 max_len = max(max_len, len(val_str))
         ws1.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # Save to a memory stream buffer so users can download it instantly via browser
     excel_buffer = io.BytesIO()
     wb.save(excel_buffer)
     excel_buffer.seek(0)
@@ -120,7 +127,6 @@ def create_jv_template():
 def process_and_validate_jv(uploaded_file):
     """Audits the uploaded spreadsheet stream and compiles data directly into SAP text lines."""
     try:
-        # Load the uploaded byte stream
         wb = openpyxl.load_workbook(uploaded_file, data_only=True)
         if "JV Upload Form" not in wb.sheetnames:
             return False, ["Invalid Template: Missing 'JV Upload Form' sheet."], 0, 0, None
@@ -132,6 +138,9 @@ def process_and_validate_jv(uploaded_file):
         reference = str(ws["F1"].value or "T1919").strip()
         header_text = str(ws["F2"].value or f"Transmittal Accrual {datetime.today().strftime('%Y')}").strip()
         
+        # Pull posting period string value
+        posting_period = str(ws["I2"].value or "").strip()
+        
         def is_invalid_date(date_str):
             if len(date_str) != 8 or not date_str.isdigit():
                 return True
@@ -141,6 +150,7 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
+        # Validation Controls Group
         if not doc_date_raw:
             return False, ["'Document Date' (Cell C1) cannot be empty!"], 0, 0, None
         if is_invalid_date(doc_date_raw):
@@ -151,11 +161,15 @@ def process_and_validate_jv(uploaded_file):
         if is_invalid_date(post_date_raw):
             return False, [f"'Posting Date' [{post_date_raw}] must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
             
+        # UPDATED: Rigid constraint requiring Posting Period to be populated explicitly
+        if not posting_period:
+            return False, ["'Posting Period' (Cell I2) cannot be empty!"], 0, 0, None
+            
         total_debit = 0.0
         total_credit = 0.0
         detailed_errors = []
         
-        sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|11|X\n"]
+        sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|{posting_period}|X\n"]
 
         # Scan rows 7 to 306
         for row in range(7, 307):
@@ -221,7 +235,6 @@ def process_and_validate_jv(uploaded_file):
         if abs(total_debit - total_credit) > 0.01:
             return False, ["Out of Balance! Total Debits must exactly equal Total Credits."], total_debit, total_credit, None
 
-        # Prepare final output text string buffer
         txt_content = "".join(sap_lines)
         return True, [], total_debit, total_credit, txt_content
 
@@ -236,7 +249,6 @@ with st.sidebar:
     st.header("🗂 Template Operations")
     st.write("Need a fresh entry form? Click below to download a blank configured tracking worksheet.")
     
-    # Generate the excel template live inside the browser stream
     template_data = create_jv_template()
     st.download_button(
         label="📥 Download Blank Form Template",
@@ -260,26 +272,24 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     st.info("File loaded successfully. Analyzing data structures...")
     
-    # Run audit rules engine directly on the browser data upload stream
     success, errors, debits, credits, sap_txt_output = process_and_validate_jv(uploaded_file)
     
-    # Display balancing dashboard cards
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
         st.metric(label="Calculated Total Debits", value=f"${debits:,.2f}")
     with col2:
         st.metric(label="Calculated Total Credits", value=f"${credits:,.2f}")
     with col3:
-        st.write("")  # Padding to lower the button to align visually
+        st.write("")
         st.write("")
         if st.button("🔄 Upload New JV", use_container_width=True):
             st.session_state["uploader_key"] += 1
             st.rerun()
         
     if success:
+        st.write("") # Margin spacing
         st.success("🎉 Perfect! Your spreadsheet passed all date constraints, digit matching structure layouts, and balances perfectly!")
         
-        # Give them an immediate button to download their clean text file
         st.download_button(
             label="💾 Download Ready SAP Text File (.txt)",
             data=sap_txt_output,
@@ -287,6 +297,7 @@ if uploaded_file is not None:
             mime="text/plain"
         )
     else:
+        st.write("") # Margin spacing
         st.error("❌ Structural Validation Failed! Please resolve the following errors inside your spreadsheet and re-upload:")
         for err in errors:
             st.markdown(f"* {err}")
