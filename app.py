@@ -6,12 +6,73 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import streamlit as st
 
-# Set up the look and feel of the web page
-st.set_page_config(page_title="JV Generation & Analytics Console", page_icon="📊", layout="wide")
+# Set up the look and feel of the web page with a sleek modern layout
+st.set_page_config(
+    page_title="JV Generation & Analytics Console", 
+    page_icon="📊", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# UPDATED: New Title Header
-st.title("📊 Treasury Management Web Console")
-st.markdown("Generate fresh templates, run automated structural audits, and export balanced journals straight to SAP.")
+# Inject custom modern CSS to style containers, text, and metric blocks
+st.markdown("""
+    <style>
+    /* Global Background and Global Font adjustments */
+    html, body, [data-testid="stAppViewContainer"] {
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    /* Main Dashboard Header Custom Styling */
+    .main-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #1E293B;
+        margin-bottom: 0.2rem;
+        letter-spacing: -0.025em;
+    }
+    .main-subtitle {
+        font-size: 1.05rem;
+        color: #64748B;
+        margin-bottom: 2rem;
+    }
+    
+    /* Sleek card look for KPIs */
+    .kpi-container {
+        background-color: #FFFFFF;
+        padding: 1.25rem 1.5rem;
+        border-radius: 12px;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+        margin-bottom: 1rem;
+    }
+    .kpi-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.25rem;
+    }
+    .kpi-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #0F172A;
+    }
+    
+    /* Modern Section Header Subtitles */
+    .section-title {
+        font-size: 1.35rem;
+        font-weight: 600;
+        color: #1E293B;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+    </style>
+""", unsafe_index=True, unsafe_allow_html=True)
+
+# Custom Rendered Title Block
+st.markdown('<div class="main-title">📊 Treasury Management Web Console</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-subtitle">Generate fresh templates, run automated structural audits, and export balanced journals straight to SAP.</div>', unsafe_allow_html=True)
 
 # Initialize a session state key to handle file uploader resetting without page refreshes
 if "uploader_key" not in st.session_state:
@@ -109,7 +170,6 @@ def create_jv_template():
                 max_len = max(max_len, len(val_str))
         ws1.column_dimensions[col_letter].width = max(max_len + 4, 16)
 
-    # Save to a memory stream buffer so users can download it instantly via browser
     excel_buffer = io.BytesIO()
     wb.save(excel_buffer)
     excel_buffer.seek(0)
@@ -121,7 +181,6 @@ def create_jv_template():
 def process_and_validate_jv(uploaded_file):
     """Audits the uploaded spreadsheet stream and compiles data directly into SAP text lines."""
     try:
-        # Load the uploaded byte stream
         wb = openpyxl.load_workbook(uploaded_file, data_only=True)
         if "JV Upload Form" not in wb.sheetnames:
             return False, ["Invalid Template: Missing 'JV Upload Form' sheet."], 0, 0, None
@@ -158,7 +217,6 @@ def process_and_validate_jv(uploaded_file):
         
         sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|11|X\n"]
 
-        # Scan rows 7 to 306
         for row in range(7, 307):
             fund = str(ws.cell(row=row, column=2).value or "").strip()
             gl_account = str(ws.cell(row=row, column=3).value or "").strip()
@@ -222,7 +280,6 @@ def process_and_validate_jv(uploaded_file):
         if abs(total_debit - total_credit) > 0.01:
             return False, ["Out of Balance! Total Debits must exactly equal Total Credits."], total_debit, total_credit, None
 
-        # Prepare final output text string buffer
         txt_content = "".join(sap_lines)
         return True, [], total_debit, total_credit, txt_content
 
@@ -234,62 +291,73 @@ def process_and_validate_jv(uploaded_file):
 # PHASE 3: THE WEB USER INTERFACE (SIDEBAR & PANELS)
 # ==========================================
 with st.sidebar:
-    st.header("🗂 Template Operations")
-    st.write("Need a fresh entry form? Click below to download a blank configured tracking worksheet.")
+    st.markdown('<div style="font-size: 1.2rem; font-weight: 700; color: #1E293B; margin-bottom: 0.5rem;">🗂 Template Operations</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size: 0.9rem; color: #64748B; margin-bottom: 1rem;">Need a fresh entry form? Download a blank configured tracking worksheet.</div>', unsafe_allow_html=True)
     
-    # Generate the excel template live inside the browser stream
     template_data = create_jv_template()
     st.download_button(
         label="📥 Download Blank Form Template",
         data=template_data,
         file_name="JV_Upload_Template.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
     )
     st.divider()
-    st.caption("System Version: 2026.WebStream")
+    st.caption("System Version: 2026.WebSleek")
 
 # Main Page Action Area
-st.subheader("📁 Drag and Drop Validation & SAP Export")
-st.write("Upload your completed Excel worksheet here to instantly test calculations and structure rules.")
+st.markdown('<div class="section-title">📁 Drag & Drop Validation Panel</div>', unsafe_allow_html=True)
 
-# Dynamic key applied to allow programmatic clears without full page refresh
 uploaded_file = st.file_uploader(
-    "Choose a completed JV Excel File (.xlsx)", 
+    "Drop your finalized entry sheet here to verify structural integrity and calculations:", 
     type=["xlsx"], 
-    key=f"jv_uploader_{st.session_state['uploader_key']}"
+    key=f"jv_uploader_{st.session_state['uploader_key']}",
+    label_visibility="collapsed"
 )
 
 if uploaded_file is not None:
-    st.info("File loaded successfully. Analyzing data structures...")
-    
-    # Run audit rules engine directly on the browser data upload stream
     success, errors, debits, credits, sap_txt_output = process_and_validate_jv(uploaded_file)
     
-    # Display balancing dashboard cards and the dynamic reset action button
-    col1, col2, col3 = st.columns([2, 2, 1])
+    # Modernized Custom Card Metrics Dashboard
+    st.markdown("<br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([2, 2, 1.2])
+    
     with col1:
-        st.metric(label="Calculated Total Debits", value=f"${debits:,.2f}")
+        st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">Calculated Total Debits</div>
+                <div class="kpi-value" style="color: #2563EB;">${debits:,.2f}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
     with col2:
-        st.metric(label="Calculated Total Credits", value=f"${credits:,.2f}")
+        st.markdown(f"""
+            <div class="kpi-container">
+                <div class="kpi-label">Calculated Total Credits</div>
+                <div class="kpi-value" style="color: #059669;">${credits:,.2f}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
     with col3:
-        st.write("")  # Padding to lower the button to align visually
-        st.write("")
-        # UPDATED: Added interactive page-refreshless reset option
-        if st.button("🔄 Upload New JV", use_container_width=True):
+        st.write("") # Spacer padding
+        if st.button("🔄 Clear & Upload New JV", use_container_width=True, type="secondary"):
             st.session_state["uploader_key"] += 1
             st.rerun()
+            
+    st.markdown("<br>", unsafe_allow_html=True)
         
     if success:
         st.success("🎉 Perfect! Your spreadsheet passed all date constraints, digit matching structure layouts, and balances perfectly!")
         
-        # Give them an immediate button to download their clean text file
+        # Modern prominent placement button for exporting clean text data files
         st.download_button(
             label="💾 Download Ready SAP Text File (.txt)",
             data=sap_txt_output,
             file_name=f"SAP_JV_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain"
+            mime="text/plain",
+            type="primary"
         )
     else:
         st.error("❌ Structural Validation Failed! Please resolve the following errors inside your spreadsheet and re-upload:")
         for err in errors:
-            st.markdown(f"* {err}")
+            st.markdown(f"• {err}")
