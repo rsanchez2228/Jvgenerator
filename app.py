@@ -59,7 +59,7 @@ def create_jv_template():
     ws1["I1"].font = Font(name="Segoe UI", size=11, bold=True, color="1F4E78")
     ws1["I1"].border = THIN_BORDER
 
-    # UPDATED: Template cell generates completely empty now (no default fallback placeholder text)
+    # Template cell generates completely empty now (no default fallback placeholder text)
     ws1["I2"] = ""
     ws1["I2"].number_format = "@"
     ws1["I2"].font = FONT_BODY
@@ -150,20 +150,19 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
-        # Validation Controls Group
+        # UPDATED: Direct line and column error messaging for missing Posting Period
+        if not posting_period:
+            return False, ["Missing 'Posting Period'! Please populate Cell I2 (Row: 2, Column: 9) before uploading."], 0, 0, None
+
         if not doc_date_raw:
-            return False, ["'Document Date' (Cell C1) cannot be empty!"], 0, 0, None
+            return False, ["'Document Date' (Cell C1, Row: 1, Column: 3) cannot be empty!"], 0, 0, None
         if is_invalid_date(doc_date_raw):
-            return False, [f"'Document Date' [{doc_date_raw}] must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
+            return False, [f"'Document Date' [{doc_date_raw}] at Cell C1 (Row: 1, Column: 3) must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
 
         if not post_date_raw:
-            return False, ["'Posting Date' (Cell C2) cannot be empty!"], 0, 0, None
+            return False, ["'Posting Date' (Cell C2, Row: 2, Column: 3) cannot be empty!"], 0, 0, None
         if is_invalid_date(post_date_raw):
-            return False, [f"'Posting Date' [{post_date_raw}] must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
-            
-        # UPDATED: Rigid constraint requiring Posting Period to be populated explicitly
-        if not posting_period:
-            return False, ["'Posting Period' (Cell I2) cannot be empty!"], 0, 0, None
+            return False, [f"'Posting Date' [{post_date_raw}] at Cell C2 (Row: 2, Column: 3) must be exactly 8 digits (YYYYMMDD)!"], 0, 0, None
             
         total_debit = 0.0
         total_credit = 0.0
@@ -187,38 +186,38 @@ def process_and_validate_jv(uploaded_file):
                 continue
 
             if fund and (len(fund) != 6 or not fund.isdigit()):
-                detailed_errors.append(f"Row {row}: Fund must be exactly 6 digits (Found: '{fund}')")
+                detailed_errors.append(f"Row {row}, Column 2 (Fund): Must be exactly 6 digits (Found: '{fund}')")
                 continue
                 
             if not gl_account:
-                detailed_errors.append(f"Row {row}: Missing GL Account")
+                detailed_errors.append(f"Row {row}, Column 3 (GL acct): Missing GL Account value")
                 continue
             elif len(gl_account) != 6 or not gl_account.isdigit():
-                detailed_errors.append(f"Row {row}: GL Account must be exactly 6 digits (Found: '{gl_account}')")
+                detailed_errors.append(f"Row {row}, Column 3 (GL acct): Must be exactly 6 digits (Found: '{gl_account}')")
                 continue
 
             if bus_area and (len(bus_area) != 4 or not bus_area.isdigit()):
-                detailed_errors.append(f"Row {row}: Business Area must be exactly 4 digits (Found: '{bus_area}')")
+                detailed_errors.append(f"Row {row}, Column 4 (Business area): Must be exactly 4 digits (Found: '{bus_area}')")
                 continue
 
             if func_area and (len(func_area) != 7 or not func_area.isdigit()):
-                detailed_errors.append(f"Row {row}: Functional Area must be exactly 7 digits (Found: '{func_area}')")
+                detailed_errors.append(f"Row {row}, Column 5 (Functional area): Must be exactly 7 digits (Found: '{func_area}')")
                 continue
 
             if cost_center and not re.match(r"^\d{8}-\d{6}$", cost_center):
-                detailed_errors.append(f"Row {row}: Cost Center structure must be 8digits-6digits (Found: '{cost_center}')")
+                detailed_errors.append(f"Row {row}, Column 6 (Cost Center): Must fit 8digits-6digits template format (Found: '{cost_center}')")
                 continue
 
             try:
                 amount = float(amount_val or 0.0)
             except ValueError:
-                detailed_errors.append(f"Row {row}: Amount column has a non-numeric value.")
+                detailed_errors.append(f"Row {row}, Column 8 (Amount): Non-numeric structural value detected.")
                 continue
 
             if amount < 0:
-                detailed_errors.append(f"Row {row}: Amount value cannot be negative.")
+                detailed_errors.append(f"Row {row}, Column 8 (Amount): Values cannot be negative numbers.")
             elif drcr_flag not in ["DR", "CR"]:
-                detailed_errors.append(f"Row {row}: Must specify 'DR' or 'CR' format criteria.")
+                detailed_errors.append(f"Row {row}, Column 9 (DR/CR): Format must explicitly say 'DR' or 'CR'.")
             else:
                 if drcr_flag == "DR":
                     total_debit += amount
@@ -287,7 +286,7 @@ if uploaded_file is not None:
             st.rerun()
         
     if success:
-        st.write("") # Margin spacing
+        st.write("") 
         st.success("🎉 Perfect! Your spreadsheet passed all date constraints, digit matching structure layouts, and balances perfectly!")
         
         st.download_button(
@@ -297,7 +296,7 @@ if uploaded_file is not None:
             mime="text/plain"
         )
     else:
-        st.write("") # Margin spacing
+        st.write("") 
         st.error("❌ Structural Validation Failed! Please resolve the following errors inside your spreadsheet and re-upload:")
         for err in errors:
             st.markdown(f"* {err}")
