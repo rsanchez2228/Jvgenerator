@@ -147,19 +147,21 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
-        # UPDATED: Comprehensive, structural field error messaging explicitly pinpointing cell coordinates
+        # Preliminary global field validation container list
+        header_errors = []
         if not posting_period:
-            return False, ["Missing Required Field: 'Posting Period' value is completely empty. Location: Cell I2 (Row 2, Column 9)"], 0, 0, None
-
+            header_errors.append("Missing Required Field: 'Posting Period' value is completely empty. Location: Cell I2 (Row 2, Column 9)")
         if not doc_date_raw:
-            return False, ["Missing Required Field: 'Document Date' value is completely empty. Location: Cell C1 (Row 1, Column 3)"], 0, 0, None
-        if is_invalid_date(doc_date_raw):
-            return False, [f"Invalid Value Error: 'Document Date' [{doc_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C1 (Row 1, Column 3)"], 0, 0, None
-
+            header_errors.append("Missing Required Field: 'Document Date' value is completely empty. Location: Cell C1 (Row 1, Column 3)")
+        elif is_invalid_date(doc_date_raw):
+            header_errors.append(f"Invalid Value Error: 'Document Date' [{doc_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C1 (Row 1, Column 3)")
         if not post_date_raw:
-            return False, ["Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)"], 0, 0, None
-        if is_invalid_date(post_date_raw):
-            return False, [f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)"], 0, 0, None
+            header_errors.append("Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)")
+        elif is_invalid_date(post_date_raw):
+            header_errors.append(f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)")
+
+        if header_errors:
+            return False, header_errors, 0, 0, None
             
         total_debit = 0.0
         total_credit = 0.0
@@ -179,43 +181,52 @@ def process_and_validate_jv(uploaded_file):
             drcr_flag = str(ws.cell(row=row, column=9).value or "").strip().upper()
             description = ws.cell(row=row, column=10).value or "Transmittal Entry"
 
+            # Check if line is completely empty
             if not fund and not gl_account and not bus_area and not func_area and not cost_center and not amount_val and drcr_flag == "":
                 continue
 
+            row_has_error = False
+
             if fund and (len(fund) != 6 or not fund.isdigit()):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Fund' must be exactly 6 digits. Location: Cell B{row} (Row {row}, Column 2) - Found: '{fund}'")
-                continue
+                row_has_error = True
                 
             if not gl_account:
                 detailed_errors.append(f"Missing Value: Field 'GL acct' cannot be empty. Location: Cell C{row} (Row {row}, Column 3)")
-                continue
+                row_has_error = True
             elif len(gl_account) != 6 or not gl_account.isdigit():
                 detailed_errors.append(f"Format Constraint Mismatch: 'GL acct' must be exactly 6 digits. Location: Cell C{row} (Row {row}, Column 3) - Found: '{gl_account}'")
-                continue
+                row_has_error = True
 
             if bus_area and (len(bus_area) != 4 or not bus_area.isdigit()):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
-                continue
+                row_has_error = True
 
             if func_area and (len(func_area) != 7 or not func_area.isdigit()):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must be exactly 7 digits. Location: Cell E{row} (Row {row}, Column 5) - Found: '{func_area}'")
-                continue
+                row_has_error = True
 
             if cost_center and not re.match(r"^\d{8}-\d{6}$", cost_center):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must adhere to 8digits-6digits mask. Location: Cell F{row} (Row {row}, Column 6) - Found: '{cost_center}'")
-                continue
+                row_has_error = True
 
             try:
                 amount = float(amount_val or 0.0)
             except ValueError:
                 detailed_errors.append(f"Data Type Error: 'Amount' column contains a non-numeric string value. Location: Cell H{row} (Row {row}, Column 8)")
-                continue
+                row_has_error = True
+                amount = 0.0
 
             if amount < 0:
                 detailed_errors.append(f"Value Constraint Error: 'Amount' value cannot be negative numbers. Location: Cell H{row} (Row {row}, Column 8)")
-            elif drcr_flag not in ["DR", "CR"]:
+                row_has_error = True
+                
+            if drcr_flag not in ["DR", "CR"]:
                 detailed_errors.append(f"Value Constraint Error: 'DR/CR' column choice must be explicitly written as 'DR' or 'CR'. Location: Cell I{row} (Row {row}, Column 9)")
-            else:
+                row_has_error = True
+
+            # UPDATED: Only track mathematics metrics if row structural validations are 100% clean
+            if not row_has_error:
                 if drcr_flag == "DR":
                     total_debit += amount
                 elif drcr_flag == "CR":
