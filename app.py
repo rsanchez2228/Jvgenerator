@@ -9,8 +9,13 @@ import streamlit as st
 # Set up the look and feel of the web page
 st.set_page_config(page_title="JV Generation & Analytics Console", page_icon="📊", layout="wide")
 
-st.title("📊 Financial Assistant Web Console")
+# UPDATED: New Title Header
+st.title("📊 Treasury Management Web Console")
 st.markdown("Generate fresh templates, run automated structural audits, and export balanced journals straight to SAP.")
+
+# Initialize a session state key to handle file uploader resetting without page refreshes
+if "uploader_key" not in st.session_state:
+    st.session_state["uploader_key"] = 0
 
 # ==========================================
 # ENGINE 1: THE EXCEL GENERATOR
@@ -151,7 +156,6 @@ def process_and_validate_jv(uploaded_file):
         total_credit = 0.0
         detailed_errors = []
         
-        # UPDATED: Changed the hardcoded '12' to '11' to match the legacy file structure rule
         sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|11|X\n"]
 
         # Scan rows 7 to 306
@@ -248,7 +252,12 @@ with st.sidebar:
 st.subheader("📁 Drag and Drop Validation & SAP Export")
 st.write("Upload your completed Excel worksheet here to instantly test calculations and structure rules.")
 
-uploaded_file = st.file_uploader("Choose a completed JV Excel File (.xlsx)", type=["xlsx"])
+# Dynamic key applied to allow programmatic clears without full page refresh
+uploaded_file = st.file_uploader(
+    "Choose a completed JV Excel File (.xlsx)", 
+    type=["xlsx"], 
+    key=f"jv_uploader_{st.session_state['uploader_key']}"
+)
 
 if uploaded_file is not None:
     st.info("File loaded successfully. Analyzing data structures...")
@@ -256,12 +265,19 @@ if uploaded_file is not None:
     # Run audit rules engine directly on the browser data upload stream
     success, errors, debits, credits, sap_txt_output = process_and_validate_jv(uploaded_file)
     
-    # Display balancing dashboard cards
-    col1, col2 = st.columns(2)
+    # Display balancing dashboard cards and the dynamic reset action button
+    col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
         st.metric(label="Calculated Total Debits", value=f"${debits:,.2f}")
     with col2:
         st.metric(label="Calculated Total Credits", value=f"${credits:,.2f}")
+    with col3:
+        st.write("")  # Padding to lower the button to align visually
+        st.write("")
+        # UPDATED: Added interactive page-refreshless reset option
+        if st.button("🔄 Upload New JV", use_container_width=True):
+            st.session_state["uploader_key"] += 1
+            st.rerun()
         
     if success:
         st.success("🎉 Perfect! Your spreadsheet passed all date constraints, digit matching structure layouts, and balances perfectly!")
