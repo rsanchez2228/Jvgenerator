@@ -150,7 +150,9 @@ def process_and_validate_jv(uploaded_file):
         total_debit = 0.0
         total_credit = 0.0
         detailed_errors = []
-        sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|12|X\n"]
+        
+        # UPDATED: Changed the hardcoded '12' to '11' to match the legacy file structure rule
+        sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|11|X\n"]
 
         # Scan rows 7 to 306
         for row in range(7, 307):
@@ -207,8 +209,6 @@ def process_and_validate_jv(uploaded_file):
                     total_credit += amount
                 
                 amount_formatted = f"{amount:.2f}"
-                
-                # UPDATED: Replaced the '100000' and '1331' fallbacks to pass true blanks if left empty
                 sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
