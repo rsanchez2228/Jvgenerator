@@ -147,29 +147,26 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
-        # Preliminary global field validation container list
-        header_errors = []
-        if not posting_period:
-            header_errors.append("Missing Required Field: 'Posting Period' value is completely empty. Location: Cell I2 (Row 2, Column 9)")
-        if not doc_date_raw:
-            header_errors.append("Missing Required Field: 'Document Date' value is completely empty. Location: Cell C1 (Row 1, Column 3)")
-        elif is_invalid_date(doc_date_raw):
-            header_errors.append(f"Invalid Value Error: 'Document Date' [{doc_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C1 (Row 1, Column 3)")
-        if not post_date_raw:
-            header_errors.append("Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)")
-        elif is_invalid_date(post_date_raw):
-            header_errors.append(f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)")
+        # All tracking messages now pool into this single bucket
+        detailed_errors = []
 
-        if header_errors:
-            return False, header_errors, 0, 0, None
+        # Check Global Headers
+        if not posting_period:
+            detailed_errors.append("Missing Required Field: 'Posting Period' value is completely empty. Location: Cell I2 (Row 2, Column 9)")
+        if not doc_date_raw:
+            detailed_errors.append("Missing Required Field: 'Document Date' value is completely empty. Location: Cell C1 (Row 1, Column 3)")
+        elif is_invalid_date(doc_date_raw):
+            detailed_errors.append(f"Invalid Value Error: 'Document Date' [{doc_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C1 (Row 1, Column 3)")
+        if not post_date_raw:
+            detailed_errors.append("Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)")
+        elif is_invalid_date(post_date_raw):
+            detailed_errors.append(f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)")
             
         total_debit = 0.0
         total_credit = 0.0
-        detailed_errors = []
-        
         sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|{posting_period}|X\n"]
 
-        # Scan rows 7 to 306
+        # Run row scanning regardless of header validation status to gather ALL issues at once
         for row in range(7, 307):
             fund = str(ws.cell(row=row, column=2).value or "").strip()
             gl_account = str(ws.cell(row=row, column=3).value or "").strip()
@@ -181,7 +178,7 @@ def process_and_validate_jv(uploaded_file):
             drcr_flag = str(ws.cell(row=row, column=9).value or "").strip().upper()
             description = ws.cell(row=row, column=10).value or "Transmittal Entry"
 
-            # Check if line is completely empty
+            # Check if row is intentionally empty
             if not fund and not gl_account and not bus_area and not func_area and not cost_center and not amount_val and drcr_flag == "":
                 continue
 
@@ -225,7 +222,7 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Value Constraint Error: 'DR/CR' column choice must be explicitly written as 'DR' or 'CR'. Location: Cell I{row} (Row {row}, Column 9)")
                 row_has_error = True
 
-            # UPDATED: Only track mathematics metrics if row structural validations are 100% clean
+            # Track numbers for calculation metrics only if the row data layout itself is completely clean
             if not row_has_error:
                 if drcr_flag == "DR":
                     total_debit += amount
@@ -236,6 +233,7 @@ def process_and_validate_jv(uploaded_file):
                 sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
+        # Output the unified error bucket across both headers and line fields
         if len(detailed_errors) > 0:
             return False, detailed_errors, total_debit, total_credit, None
 
