@@ -200,12 +200,12 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
                 row_has_error = True
 
-            # RULE UPDATED: Cost Center template cell (Column 5) must be exactly 7 digits
+            # Cost Center template cell (Column 5) must be exactly 7 digits
             if cost_center and (len(cost_center) != 7 or not cost_center.isdigit()):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must be exactly 7 digits. Location: Cell E{row} (Row {row}, Column 5) - Found: '{cost_center}'")
                 row_has_error = True
 
-            # RULE UPDATED: Functional Area template cell (Column 6) must be 8digits-6digits mask
+            # Functional Area template cell (Column 6) must be 8digits-6digits mask
             if func_area and not re.match(r"^\d{8}-\d{6}$", func_area):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must adhere to 8digits-6digits mask. Location: Cell F{row} (Row {row}, Column 6) - Found: '{func_area}'")
                 row_has_error = True
@@ -233,9 +233,9 @@ def process_and_validate_jv(uploaded_file):
                 
                 amount_formatted = f"{amount:.2f}"
                 
-                # PIPELINE ALIGNMENT UNTOUCHED: Maps the 8-6 format field to index 6 (Functional Area field position) 
-                # and maps the 7 digit field to index 7 (Cost Center field position) to match the expected legacy text layout format.
-                sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
+                # FIXED PIPELINE: Maps 7-digit value (cost_center) to the 1st position and 8-6 format value (func_area) to the 2nd position
+                # This ensures the output text positions align precisely with standard SAP expectations.
+                sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{cost_center}|{func_area}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
         # Output the unified comprehensive error collection bucket
