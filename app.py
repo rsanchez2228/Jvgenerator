@@ -17,7 +17,7 @@ if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
 # ==========================================
-# ENGINE 1: THE EXCEL GENERATOR
+# ENGINE 1: THE EXCEL GENERATOR (FLIPPED LAYOUT)
 # ==========================================
 def create_jv_template():
     """Builds a 300-row template in memory and returns it as a downloadable file object."""
@@ -70,7 +70,8 @@ def create_jv_template():
         ws1[input_cell].font = FONT_BODY
         ws1[input_cell].border = THIN_BORDER
 
-    headers = ["Line No", "Fund", "GL acct", "Business area", "Functional area", "Cost Center", 
+    # CHANGED: Flipped columns 5 and 6 labels only on the spreadsheet UI template layout
+    headers = ["Line No", "Fund", "GL acct", "Business area", "Cost Center", "Functional area", 
                "WBS Element", "Amount", "DR/CR", "Line Description", "Validation Status"]
 
     for col_idx, header in enumerate(headers, 1):
@@ -147,7 +148,7 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
-        # All tracking messages now pool into this single bucket
+        # Complete comprehensive error collection tracking list
         detailed_errors = []
 
         # Check Global Headers
@@ -166,13 +167,16 @@ def process_and_validate_jv(uploaded_file):
         total_credit = 0.0
         sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|{posting_period}|X\n"]
 
-        # Run row scanning regardless of header validation status to gather ALL issues at once
+        # Scan rows 7 to 306
         for row in range(7, 307):
             fund = str(ws.cell(row=row, column=2).value or "").strip()
             gl_account = str(ws.cell(row=row, column=3).value or "").strip()
             bus_area = str(ws.cell(row=row, column=4).value or "").strip()
-            func_area = str(ws.cell(row=row, column=5).value or "").strip()
-            cost_center = str(ws.cell(row=row, column=6).value or "").strip()
+            
+            # CHANGED: Read data mapping using the inverted column layout coordinates
+            cost_center = str(ws.cell(row=row, column=5).value or "").strip()
+            func_area = str(ws.cell(row=row, column=6).value or "").strip()
+            
             wbs_element = str(ws.cell(row=row, column=7).value or "").strip()
             amount_val = ws.cell(row=row, column=8).value
             drcr_flag = str(ws.cell(row=row, column=9).value or "").strip().upper()
@@ -199,12 +203,13 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
                 row_has_error = True
 
-            if func_area and (len(func_area) != 7 or not func_area.isdigit()):
-                detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must be exactly 7 digits. Location: Cell E{row} (Row {row}, Column 5) - Found: '{func_area}'")
+            # CHANGED: Validation coordinate callouts update to track shifted columns (Cost center is 5/E, Func area is 6/F)
+            if cost_center and not re.match(r"^\d{8}-\d{6}$", cost_center):
+                detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must adhere to 8digits-6digits mask. Location: Cell E{row} (Row {row}, Column 5) - Found: '{cost_center}'")
                 row_has_error = True
 
-            if cost_center and not re.match(r"^\d{8}-\d{6}$", cost_center):
-                detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must adhere to 8digits-6digits mask. Location: Cell F{row} (Row {row}, Column 6) - Found: '{cost_center}'")
+            if func_area and (len(func_area) != 7 or not func_area.isdigit()):
+                detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must be exactly 7 digits. Location: Cell F{row} (Row {row}, Column 6) - Found: '{func_area}'")
                 row_has_error = True
 
             try:
@@ -222,7 +227,6 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Value Constraint Error: 'DR/CR' column choice must be explicitly written as 'DR' or 'CR'. Location: Cell I{row} (Row {row}, Column 9)")
                 row_has_error = True
 
-            # Track numbers for calculation metrics only if the row data layout itself is completely clean
             if not row_has_error:
                 if drcr_flag == "DR":
                     total_debit += amount
@@ -230,10 +234,12 @@ def process_and_validate_jv(uploaded_file):
                     total_credit += amount
                 
                 amount_formatted = f"{amount:.2f}"
+                
+                # UNTOUCHED: Kept output arrangement order exact (func_area before cost_center) so final text layout meets legacy SAP standards
                 sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
-        # Output the unified error bucket across both headers and line fields
+        # Output unified error bucket
         if len(detailed_errors) > 0:
             return False, detailed_errors, total_debit, total_credit, None
 
