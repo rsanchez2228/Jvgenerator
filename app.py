@@ -70,6 +70,7 @@ def create_jv_template():
         ws1[input_cell].font = FONT_BODY
         ws1[input_cell].border = THIN_BORDER
 
+    # Column configuration matching your spreadsheet template requirements
     headers = ["Line No", "Fund", "GL acct", "Business area", "Cost Center", "Functional area", 
                "WBS Element", "Amount", "DR/CR", "Line Description", "Validation Status"]
 
@@ -147,7 +148,7 @@ def process_and_validate_jv(uploaded_file):
             except ValueError:
                 return True
 
-        # Complete comprehensive error collection tracking list
+        # Tracks every single validation message across the file simultaneously
         detailed_errors = []
 
         # Check Global Headers
@@ -199,12 +200,12 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
                 row_has_error = True
 
-            # UPDATED: Cost Center now verifies exactly 7 digits
+            # RULE UPDATED: Cost Center template cell (Column 5) must be exactly 7 digits
             if cost_center and (len(cost_center) != 7 or not cost_center.isdigit()):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must be exactly 7 digits. Location: Cell E{row} (Row {row}, Column 5) - Found: '{cost_center}'")
                 row_has_error = True
 
-            # UPDATED: Functional Area now verifies the 8digits-6digits format mask
+            # RULE UPDATED: Functional Area template cell (Column 6) must be 8digits-6digits mask
             if func_area and not re.match(r"^\d{8}-\d{6}$", func_area):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must adhere to 8digits-6digits mask. Location: Cell F{row} (Row {row}, Column 6) - Found: '{func_area}'")
                 row_has_error = True
@@ -232,11 +233,12 @@ def process_and_validate_jv(uploaded_file):
                 
                 amount_formatted = f"{amount:.2f}"
                 
-                # Legacied structure remains unaffected (func_area before cost_center for SAP processing layout)
+                # PIPELINE ALIGNMENT UNTOUCHED: Maps the 8-6 format field to index 6 (Functional Area field position) 
+                # and maps the 7 digit field to index 7 (Cost Center field position) to match the expected legacy text layout format.
                 sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{func_area}|{cost_center}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
-        # Output unified error bucket
+        # Output the unified comprehensive error collection bucket
         if len(detailed_errors) > 0:
             return False, detailed_errors, total_debit, total_credit, None
 
