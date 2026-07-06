@@ -196,8 +196,10 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Format Constraint Mismatch: 'GL acct' must be exactly 6 digits. Location: Cell C{row} (Row {row}, Column 3) - Found: '{gl_account}'")
                 row_has_error = True
 
+            # UPDATED RULE: Allow business area to be explicitly empty in spreadsheet, 
+            # but if something is filled in, it must still match exactly 4 digits.
             if bus_area and (len(bus_area) != 4 or not bus_area.isdigit()):
-                detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
+                detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits if provided. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
                 row_has_error = True
 
             # Cost Center template cell (Column 5) must be exactly 7 digits
@@ -233,9 +235,11 @@ def process_and_validate_jv(uploaded_file):
                 
                 amount_formatted = f"{amount:.2f}"
                 
-                # FIXED PIPELINE: Maps 7-digit value (cost_center) to the 1st position and 8-6 format value (func_area) to the 2nd position
-                # This ensures the output text positions align precisely with standard SAP expectations.
-                sap_line = f"D|{row-6}|{fund}|{gl_account}|{bus_area}|{cost_center}|{func_area}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
+                # PIPELINE ADJUSTMENT: If business area is empty or omitted, pad it out to '0000' for SAP
+                sap_bus_area = bus_area if bus_area else "0000"
+                
+                # Combines clean output formatting using padded values
+                sap_line = f"D|{row-6}|{fund}|{gl_account}|{sap_bus_area}|{cost_center}|{func_area}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
                 sap_lines.append(sap_line)
 
         # Output the unified comprehensive error collection bucket
