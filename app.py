@@ -4,6 +4,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation  # Imported for cell constraints
 import streamlit as st
 
 # Set up the look and feel of the web page
@@ -70,6 +71,28 @@ def create_jv_template():
         ws1[input_cell].font = FONT_BODY
         ws1[input_cell].border = THIN_BORDER
 
+    # ------------------------------------------------------------
+    # EMBEDDED EXCEL DATA VALIDATION (CHARACTER LIMITS)
+    # ------------------------------------------------------------
+    # Enforce a 16-character limit on the Reference field (F1)
+    dv_ref = DataValidation(type="textLength", operator="lessThanOrEqual", formula1=16)
+    dv_ref.error = "The reference string cannot exceed 16 characters for SAP compatibility."
+    dv_ref.errorTitle = "Invalid Length"
+    dv_ref.prompt = "Enter reference identifier (maximum 16 characters)."
+    dv_ref.promptTitle = "Reference Character Limit"
+    ws1.add_data_validation(dv_ref)
+    dv_ref.add(ws1["F1"])
+
+    # Enforce a 25-character limit on the Header Text field (F2)
+    dv_hdr = DataValidation(type="textLength", operator="lessThanOrEqual", formula1=25)
+    dv_hdr.error = "The header description cannot exceed 25 characters for SAP compatibility."
+    dv_hdr.errorTitle = "Invalid Length"
+    dv_hdr.prompt = "Enter journal header text (maximum 25 characters)."
+    dv_hdr.promptTitle = "Header Text Character Limit"
+    ws1.add_data_validation(dv_hdr)
+    dv_hdr.add(ws1["F2"])
+    # ------------------------------------------------------------
+
     # Column configuration matching your spreadsheet template requirements
     headers = ["Line No", "Fund", "GL acct", "Business area", "Cost Center", "Functional area", 
                "WBS Element", "Amount", "DR/CR", "Line Description", "Validation Status"]
@@ -135,8 +158,8 @@ def process_and_validate_jv(uploaded_file):
         
         doc_date_raw = str(ws["C1"].value or "").strip()
         post_date_raw = str(ws["C2"].value or "").strip()
-        reference = str(ws["F1"].value or "T1919").strip()
-        header_text = str(ws["F2"].value or f"Transmittal Accrual {datetime.today().strftime('%Y')}").strip()
+        reference = str(ws["F1"].value or "").strip()
+        header_text = str(ws["F2"].value or "").strip()
         posting_period = str(ws["I2"].value or "").strip()
         
         def is_invalid_date(date_str):
@@ -162,6 +185,15 @@ def process_and_validate_jv(uploaded_file):
             detailed_errors.append("Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)")
         elif is_invalid_date(post_date_raw):
             detailed_errors.append(f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)")
+
+        # ------------------------------------------------------------
+        # PYTHON CORE APPLICATION VALIDATION (BACKUP CHECKS)
+        # ------------------------------------------------------------
+        if len(reference) > 16:
+            detailed_errors.append(f"Format Constraint Mismatch: 'Reference' cannot exceed 16 characters. Location: Cell F1 - Found length: {len(reference)}")
+        if len(header_text) > 25:
+            detailed_errors.append(f"Format Constraint Mismatch: 'Header Text' cannot exceed 25 characters. Location: Cell F2 - Found length: {len(header_text)}")
+        # ------------------------------------------------------------
             
         total_debit = 0.0
         total_credit = 0.0
@@ -196,7 +228,7 @@ def process_and_validate_jv(uploaded_file):
                 detailed_errors.append(f"Format Constraint Mismatch: 'GL acct' must be exactly 6 digits. Location: Cell C{row} (Row {row}, Column 3) - Found: '{gl_account}'")
                 row_has_error = True
 
-            # UPDATED RULE: Allow business area to be explicitly empty in spreadsheet, 
+            # Allow business area to be explicitly empty in spreadsheet, 
             # but if something is filled in, it must still match exactly 4 digits.
             if bus_area and (len(bus_area) != 4 or not bus_area.isdigit()):
                 detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits if provided. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
@@ -235,7 +267,7 @@ def process_and_validate_jv(uploaded_file):
                 
                 amount_formatted = f"{amount:.2f}"
                 
-                # PIPELINE ADJUSTMENT: If business area is empty or omitted, pad it out to '0000' for SAP
+                # If business area is empty or omitted, pad it out to '0000' for SAP
                 sap_bus_area = bus_area if bus_area else "0000"
                 
                 # Combines clean output formatting using padded values
