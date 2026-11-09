@@ -189,15 +189,15 @@ if st.button("Generate W-9 PDF", type="primary"):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         page = doc[0]
 
-        # 1. Whiteout Box 3b input area visually (covers static/pre-printed artifacts)
-        box3b_rect = fitz.Rect(470, 220, 520, 245)
+        # 1. Whiteout Box 3b area visually to wipe any pre-printed symbols
+        box3b_rect = fitz.Rect(450, 200, 530, 260)
         page.add_redact_annot(box3b_rect, fill=(1, 1, 1))
         page.apply_redactions()
 
         widgets = list(page.widgets())
 
         if widgets:
-            # Clear or delete unwanted widgets (Line 7 and Line 3b)
+            # First Pass: Delete unwanted widgets (Line 7 and Box 3b)
             for widget in list(page.widgets()):
                 rect = widget.rect
                 if not rect:
@@ -205,13 +205,13 @@ if st.button("Generate W-9 PDF", type="primary"):
                 # Remove Line 7 widget
                 if 325 <= rect.y0 < 365 and rect.x0 < 300:
                     page.delete_widget(widget)
-                # Remove Box 3b widget
-                elif 205 <= rect.y0 < 255 and rect.x0 >= 400:
+                # Remove Box 3b widget completely
+                elif 200 <= rect.y0 < 265 and rect.x0 >= 350:
                     widget.field_value = ""
                     widget.update()
                     page.delete_widget(widget)
 
-            # Populate target widgets by geometric bounds
+            # Second Pass: Populate target widgets by refined geometric bounds
             for widget in list(page.widgets()):
                 rect = widget.rect
                 if not rect:
@@ -229,7 +229,8 @@ if st.button("Generate W-9 PDF", type="primary"):
                     widget.field_value = box6
                     widget.text_fontsize = 11
                     widget.update()
-                elif 255 <= rect.y0 < 365 and rect.x0 >= 300:
+                # Requester box (starts strictly at y >= 265)
+                elif 265 <= rect.y0 < 365 and rect.x0 >= 300:
                     widget.field_value = requester
                     widget.text_fontsize = 7.5
                     widget.update()
