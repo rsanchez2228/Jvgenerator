@@ -194,14 +194,14 @@ if st.button("Generate W-9 PDF", type="primary"):
             page.delete_widget(widget)
 
         # 2. White-out Box 3b and Line 7 completely
-        page.add_redact_annot(fitz.Rect(470, 210, 540, 255), fill=(1, 1, 1))
+        page.add_redact_annot(fitz.Rect(470, 215, 530, 255), fill=(1, 1, 1))
         page.add_redact_annot(fitz.Rect(45, 330, 300, 365), fill=(1, 1, 1))
         page.apply_redactions()
 
         # 3. Direct vector text placement (Static flattening)
         if box2:
             page.insert_textbox(
-                fitz.Rect(45, 138, 300, 195),
+                fitz.Rect(45, 138, 560, 165),
                 box2,
                 fontsize=11,
                 fontname="helv",
