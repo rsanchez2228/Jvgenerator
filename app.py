@@ -1,270 +1,349 @@
-import csv
 import io
-import os
 import re
 from datetime import datetime
-import fitz  # PyMuPDF
+import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation  # Imported for cell constraints
 import streamlit as st
 
-# Configure web page
-st.set_page_config(page_title="W-9 Generator", page_icon="📄", layout="centered")
+# Set up the look and feel of the web page
+st.set_page_config(page_title="JV Generation & Analytics Console", page_icon="📊", layout="wide")
 
-st.title("📄 School W-9 Form Generator")
-st.write("Select a school location number to auto-fill Boxes 2, 5, and 6, or type details manually.")
+st.title("📊 Treasury Management Web Console")
+st.markdown("Generate fresh templates, run automated structural audits, and export balanced journals straight to SAP.")
 
-DEFAULT_TEMPLATE_PATH = "master_w9.pdf"
-today_date = datetime.today().strftime("%m/%d/%Y")
+# Initialize a session state key to handle file uploader resetting without page refreshes
+if "uploader_key" not in st.session_state:
+    st.session_state["uploader_key"] = 0
 
-def find_file(candidates):
-    if not os.path.exists("."):
-        return None
-    files_in_dir = os.listdir(".")
-    for candidate in candidates:
-        for f in files_in_dir:
-            if f.lower() == candidate.lower():
-                return f
-    return None
+# ==========================================
+# ENGINE 1: THE EXCEL GENERATOR 
+# ==========================================
+def create_jv_template():
+    """Builds a 300-row template in memory and returns it as a downloadable file object."""
+    wb = openpyxl.Workbook()
+    ws1 = wb.active
+    ws1.title = "JV Upload Form"
+    ws1.views.sheetView[0].showGridLines = True
 
-@st.cache_data
-def load_schools():
-    schools = {}
-    csv_file = find_file(["schools.csv"])
-    pdf_file = find_file(["School Directory_2.pdf", "School Directory.pdf", "school_directory.pdf"])
+    # Styles definition
+    HEADER_FILL = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    LABEL_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+    ZEBRA_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+    
+    FONT_HEADER = Font(name="Segoe UI", size=11, bold=True, color="FFFFFF")
+    FONT_LABEL = Font(name="Segoe UI", size=10, bold=True, color="1F4E78")
+    FONT_BODY = Font(name="Segoe UI", size=11)
+    
+    THIN_BORDER = Border(left=Side(style="thin", color="D9D9D9"), right=Side(style="thin", color="D9D9D9"),
+                         top=Side(style="thin", color="D9D9D9"), bottom=Side(style="thin", color="D9D9D9"))
 
-    # 1. Load cached CSV if available
-    if csv_file and os.path.exists(csv_file):
-        with open(csv_file, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                loc = str(row["location_number"]).strip().zfill(4)
-                schools[loc] = {
-                    "name": row["school_name"].strip(),
-                    "address": row["address"].strip(),
-                    "city_state_zip": row["city_state_zip"].strip(),
-                }
-        if len(schools) > 0:
-            return schools
+    header_fields = [
+        ("Document Date (YYYYMMDD):", "B1"),
+        ("Posting Date (YYYYMMDD):", "B2"),
+        ("Reference:", "E1"),
+        ("Header Text:", "E2"),
+        ("Control Total (Credits):", "H1"),
+        ("Posting Period (MM):", "H2")
+    ]
+    
+    for label_text, cell_coord in header_fields:
+        cell = ws1[cell_coord]
+        cell.value = label_text
+        cell.font = FONT_LABEL
+        cell.fill = LABEL_FILL
+        cell.alignment = Alignment(horizontal="right", vertical="center")
+        
+    ws1["I1"] = "=SUMIF(I7:I306, \"CR\", H7:H306)"
+    ws1["I1"].number_format = "$#,##0.00"
+    ws1["I1"].font = Font(name="Segoe UI", size=11, bold=True, color="1F4E78")
+    ws1["I1"].border = THIN_BORDER
 
-    # 2. Fast stream parsing directly from PDF directory
-    if pdf_file and os.path.exists(pdf_file):
-        doc = fitz.open(pdf_file)
-        full_text = ""
-        for page in doc:
-            full_text += page.get_text() + "\n"
-        doc.close()
+    ws1["I2"] = ""
+    ws1["I2"].number_format = "@"
+    ws1["I2"].font = FONT_BODY
+    ws1["I2"].border = THIN_BORDER
+    ws1["I2"].alignment = Alignment(horizontal="center", vertical="center")
+    
+    for input_cell in ["C1", "C2", "F1", "F2"]:
+        ws1[input_cell].number_format = "@"
+        ws1[input_cell].font = FONT_BODY
+        ws1[input_cell].border = THIN_BORDER
 
-        lines = [line.strip() for line in full_text.splitlines() if line.strip()]
-        i = 0
-        while i < len(lines):
-            line = lines[i]
+    # ------------------------------------------------------------
+    # EMBEDDED EXCEL DATA VALIDATION (CHARACTER LIMITS)
+    # ------------------------------------------------------------
+    # Enforce a 16-character limit on the Reference field (F1)
+    dv_ref = DataValidation(type="textLength", operator="lessThanOrEqual", formula1=16)
+    dv_ref.error = "The reference string cannot exceed 16 characters for SAP compatibility."
+    dv_ref.errorTitle = "Invalid Length"
+    dv_ref.prompt = "Enter reference identifier (maximum 16 characters)."
+    dv_ref.promptTitle = "Reference Character Limit"
+    ws1.add_data_validation(dv_ref)
+    dv_ref.add(ws1["F1"])
+
+    # Enforce a 25-character limit on the Header Text field (F2)
+    dv_hdr = DataValidation(type="textLength", operator="lessThanOrEqual", formula1=25)
+    dv_hdr.error = "The header description cannot exceed 25 characters for SAP compatibility."
+    dv_hdr.errorTitle = "Invalid Length"
+    dv_hdr.prompt = "Enter journal header text (maximum 25 characters)."
+    dv_hdr.promptTitle = "Header Text Character Limit"
+    ws1.add_data_validation(dv_hdr)
+    dv_hdr.add(ws1["F2"])
+    # ------------------------------------------------------------
+
+    # Column configuration matching your spreadsheet template requirements
+    headers = ["Line No", "Fund", "GL acct", "Business area", "Cost Center", "Functional area", 
+               "WBS Element", "Amount", "DR/CR", "Line Description", "Validation Status"]
+
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws1.cell(row=6, column=col_idx, value=header)
+        cell.font = FONT_HEADER
+        cell.fill = HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = THIN_BORDER
+    ws1.row_dimensions[6].height = 28
+
+    for row_idx in range(7, 307):
+        ws1.row_dimensions[row_idx].height = 20
+        ws1.cell(row=row_idx, column=1, value=(row_idx - 6))
+        
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws1.cell(row=row_idx, column=col_idx)
+            cell.font = FONT_BODY
+            cell.border = THIN_BORDER
+            if row_idx % 2 == 0:
+                cell.fill = ZEBRA_FILL
             
-            # Match 4-digit location codes (e.g., "18 0201", "1 7073", "0201")
-            m_loc = re.search(r"^\d{1,3}\s+(\d{4})$", line)
-            if not m_loc:
-                m_loc = re.search(r"^\d{1,3}(\d{4})$", line)
-            if not m_loc:
-                m_loc = re.search(r"^\b(\d{4})\b$", line)
+            if col_idx == 8:
+                cell.number_format = "#######0.00"
+                cell.alignment = Alignment(horizontal="right")
+            elif col_idx in [1, 2, 3, 4, 5, 6, 7]:
+                cell.alignment = Alignment(horizontal="center")
+                cell.number_format = "@"
+            elif col_idx in [9, 11]:
+                cell.alignment = Alignment(horizontal="center")
+
+    for col in ws1.columns:
+        col_letter = get_column_letter(col[0].column)
+        if col_letter == "A":
+            ws1.column_dimensions[col_letter].width = 10
+            continue
+        max_len = 0
+        for cell in col:
+            if cell.value is not None:
+                val_str = str(cell.value)
+                if val_str.startswith('='):
+                    val_str = " $999,999.99 "
+                max_len = max(max_len, len(val_str))
+        ws1.column_dimensions[col_letter].width = max(max_len + 4, 16)
+
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+    return excel_buffer
+
+# ==========================================
+# ENGINE 2: THE AUDITOR & CONVERTER
+# ==========================================
+def process_and_validate_jv(uploaded_file):
+    """Audits the uploaded spreadsheet stream and compiles data directly into SAP text lines."""
+    try:
+        wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+        if "JV Upload Form" not in wb.sheetnames:
+            return False, ["Workbook Structure Error: Missing sheet named 'JV Upload Form'."], 0, 0, None
+
+        ws = wb["JV Upload Form"]
+        
+        doc_date_raw = str(ws["C1"].value or "").strip()
+        post_date_raw = str(ws["C2"].value or "").strip()
+        reference = str(ws["F1"].value or "").strip()
+        header_text = str(ws["F2"].value or "").strip()
+        posting_period = str(ws["I2"].value or "").strip()
+        
+        def is_invalid_date(date_str):
+            if len(date_str) != 8 or not date_str.isdigit():
+                return True
+            try:
+                datetime.strptime(date_str, "%Y%m%d")
+                return False
+            except ValueError:
+                return True
+
+        # Tracks every single validation message across the file simultaneously
+        detailed_errors = []
+
+        # Check Global Headers
+        if not posting_period:
+            detailed_errors.append("Missing Required Field: 'Posting Period' value is completely empty. Location: Cell I2 (Row 2, Column 9)")
+        if not doc_date_raw:
+            detailed_errors.append("Missing Required Field: 'Document Date' value is completely empty. Location: Cell C1 (Row 1, Column 3)")
+        elif is_invalid_date(doc_date_raw):
+            detailed_errors.append(f"Invalid Value Error: 'Document Date' [{doc_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C1 (Row 1, Column 3)")
+        if not post_date_raw:
+            detailed_errors.append("Missing Required Field: 'Posting Date' value is completely empty. Location: Cell C2 (Row 2, Column 3)")
+        elif is_invalid_date(post_date_raw):
+            detailed_errors.append(f"Invalid Value Error: 'Posting Date' [{post_date_raw}] must be exactly 8 digits format (YYYYMMDD). Location: Cell C2 (Row 2, Column 3)")
+
+        # ------------------------------------------------------------
+        # PYTHON CORE APPLICATION VALIDATION (BACKUP CHECKS)
+        # ------------------------------------------------------------
+        if len(reference) > 16:
+            detailed_errors.append(f"Format Constraint Mismatch: 'Reference' cannot exceed 16 characters. Location: Cell F1 - Found length: {len(reference)}")
+        if len(header_text) > 25:
+            detailed_errors.append(f"Format Constraint Mismatch: 'Header Text' cannot exceed 25 characters. Location: Cell F2 - Found length: {len(header_text)}")
+        # ------------------------------------------------------------
+            
+        total_debit = 0.0
+        total_credit = 0.0
+        sap_lines = [f"H|EJ|{reference}|{doc_date_raw}|{post_date_raw}|{header_text}|{posting_period}|X\n"]
+
+        # Scan rows 7 to 306
+        for row in range(7, 307):
+            fund = str(ws.cell(row=row, column=2).value or "").strip()
+            gl_account = str(ws.cell(row=row, column=3).value or "").strip()
+            bus_area = str(ws.cell(row=row, column=4).value or "").strip()
+            cost_center = str(ws.cell(row=row, column=5).value or "").strip()
+            func_area = str(ws.cell(row=row, column=6).value or "").strip()
+            wbs_element = str(ws.cell(row=row, column=7).value or "").strip()
+            amount_val = ws.cell(row=row, column=8).value
+            drcr_flag = str(ws.cell(row=row, column=9).value or "").strip().upper()
+            description = ws.cell(row=row, column=10).value or "Transmittal Entry"
+
+            # Check if row is intentionally empty
+            if not fund and not gl_account and not bus_area and not func_area and not cost_center and not amount_val and drcr_flag == "":
+                continue
+
+            row_has_error = False
+
+            if fund and (len(fund) != 6 or not fund.isdigit()):
+                detailed_errors.append(f"Format Constraint Mismatch: 'Fund' must be exactly 6 digits. Location: Cell B{row} (Row {row}, Column 2) - Found: '{fund}'")
+                row_has_error = True
                 
-            if m_loc:
-                loc_code = m_loc.group(1)
+            if not gl_account:
+                detailed_errors.append(f"Missing Value: Field 'GL acct' cannot be empty. Location: Cell C{row} (Row {row}, Column 3)")
+                row_has_error = True
+            elif len(gl_account) != 6 or not gl_account.isdigit():
+                detailed_errors.append(f"Format Constraint Mismatch: 'GL acct' must be exactly 6 digits. Location: Cell C{row} (Row {row}, Column 3) - Found: '{gl_account}'")
+                row_has_error = True
+
+            # Allow business area to be explicitly empty in spreadsheet, 
+            # but if something is filled in, it must still match exactly 4 digits.
+            if bus_area and (len(bus_area) != 4 or not bus_area.isdigit()):
+                detailed_errors.append(f"Format Constraint Mismatch: 'Business area' must be exactly 4 digits if provided. Location: Cell D{row} (Row {row}, Column 4) - Found: '{bus_area}'")
+                row_has_error = True
+
+            # Cost Center template cell (Column 5) must be exactly 7 digits
+            if cost_center and (len(cost_center) != 7 or not cost_center.isdigit()):
+                detailed_errors.append(f"Format Constraint Mismatch: 'Cost Center' must be exactly 7 digits. Location: Cell E{row} (Row {row}, Column 5) - Found: '{cost_center}'")
+                row_has_error = True
+
+            # Functional Area template cell (Column 6) must be 8digits-6digits mask
+            if func_area and not re.match(r"^\d{8}-\d{6}$", func_area):
+                detailed_errors.append(f"Format Constraint Mismatch: 'Functional area' must adhere to 8digits-6digits mask. Location: Cell F{row} (Row {row}, Column 6) - Found: '{func_area}'")
+                row_has_error = True
+
+            try:
+                amount = float(amount_val or 0.0)
+            except ValueError:
+                detailed_errors.append(f"Data Type Error: 'Amount' column contains a non-numeric string value. Location: Cell H{row} (Row {row}, Column 8)")
+                row_has_error = True
+                amount = 0.0
+
+            if amount < 0:
+                detailed_errors.append(f"Value Constraint Error: 'Amount' value cannot be negative numbers. Location: Cell H{row} (Row {row}, Column 8)")
+                row_has_error = True
                 
-                # Collect address lines up to City, State, ZIP
-                j = i + 1
-                block = []
-                while j < min(i + 10, len(lines)):
-                    l_curr = lines[j]
-                    if re.search(r"^\d{1,3}\s+\d{4}$", l_curr) or "about:blank" in l_curr or "11/6/26" in l_curr:
-                        break
-                    if l_curr not in ["\uf0e0", "☑", "# LOC", "SCHOOL INFORMATION"]:
-                        clean_l = re.sub(r"^[\uf0e0\u00e0\|\s]+", "", l_curr).strip()
-                        if clean_l:
-                            block.append(clean_l)
-                    if re.search(r",\s*FL\s*\d{5}", l_curr, re.IGNORECASE):
-                        break
-                    j += 1
-                    
-                if block and re.search(r",\s*FL\s*\d{5}", block[-1], re.IGNORECASE):
-                    csz = block[-1]
-                    if len(block) >= 3:
-                        address = block[-2]
-                        name = " ".join(block[:-2]).strip()
-                    elif len(block) == 2:
-                        address = block[0]
-                        name = ""
-                    else:
-                        address = ""
-                        name = ""
-                        
-                    name = re.sub(r"^(SCHOOL INFORMATION|TELEPHONE|ADMINISTRATOR|\|\s*)+", "", name, flags=re.IGNORECASE).strip()
-                    name = re.sub(r"^\d{1,3}\s+", "", name).strip()
-                    
-                    if loc_code not in schools and (name or address):
-                        schools[loc_code] = {
-                            "name": name,
-                            "address": address,
-                            "city_state_zip": csz
-                        }
-            i += 1
+            if drcr_flag not in ["DR", "CR"]:
+                detailed_errors.append(f"Value Constraint Error: 'DR/CR' column choice must be explicitly written as 'DR' or 'CR'. Location: Cell I{row} (Row {row}, Column 9)")
+                row_has_error = True
 
-        # Cache extracted data to schools.csv for instant reloads
-        if len(schools) > 0:
-            with open("schools.csv", mode="w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["location_number", "school_name", "address", "city_state_zip"])
-                for loc, data in sorted(schools.items()):
-                    writer.writerow([loc, data["name"], data["address"], data["city_state_zip"]])
+            if not row_has_error:
+                if drcr_flag == "DR":
+                    total_debit += amount
+                elif drcr_flag == "CR":
+                    total_credit += amount
+                
+                amount_formatted = f"{amount:.2f}"
+                
+                # If business area is empty or omitted, pad it out to '0000' for SAP
+                sap_bus_area = bus_area if bus_area else "0000"
+                
+                # Combines clean output formatting using padded values
+                sap_line = f"D|{row-6}|{fund}|{gl_account}|{sap_bus_area}|{cost_center}|{func_area}|{wbs_element}|{amount_formatted}|{drcr_flag}||||||{description}\n"
+                sap_lines.append(sap_line)
 
-    return schools
+        # Output the unified comprehensive error collection bucket
+        if len(detailed_errors) > 0:
+            return False, detailed_errors, total_debit, total_credit, None
 
-school_data = load_schools()
+        if abs(total_debit - total_credit) > 0.01:
+            return False, ["Calculation Discrepancy Error: Out of Balance! Aggregate Sum of Debits must match Credits exactly."], total_debit, total_credit, None
 
-# Sidebar: Optional file upload
+        txt_content = "".join(sap_lines)
+        return True, [], total_debit, total_credit, txt_content
+
+    except Exception as e:
+        return False, [f"Fatal Parse Error: Layout schema cannot be checked. Technical details: {str(e)}"], 0, 0, None
+
+
+# ==========================================
+# PHASE 3: THE WEB USER INTERFACE (SIDEBAR & PANELS)
+# ==========================================
 with st.sidebar:
-    st.header("Template Options")
-    uploaded_file = st.file_uploader("Upload custom W-9 PDF (optional)", type=["pdf"])
+    st.header("🗂 Template Operations")
+    st.write("Need a fresh entry form? Click below to download a blank configured tracking worksheet.")
+    
+    template_data = create_jv_template()
+    st.download_button(
+        label="📥 Download Blank Form Template",
+        data=template_data,
+        file_name="JV_Upload_Template.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    st.divider()
+    st.caption("System Version: 2026.WebStream")
 
-master_file = find_file([DEFAULT_TEMPLATE_PATH, "master_w9.pdf"])
-pdf_bytes = None
+# Main Page Action Area
+st.subheader("📁 Drag and Drop Validation & SAP Export")
+st.write("Upload your completed Excel worksheet here to instantly test calculations and structure rules.")
 
-if uploaded_file is not None:
-    pdf_bytes = uploaded_file.read()
-    st.sidebar.info("Using uploaded W-9 file.")
-elif master_file and os.path.exists(master_file):
-    with open(master_file, "rb") as f:
-        pdf_bytes = f.read()
-    st.success("Loaded default master W-9 template.")
-else:
-    st.warning("⚠️ `master_w9.pdf` not found in directory. Please upload a PDF in the sidebar or place `master_w9.pdf` in the project folder.")
-
-# School Search Dropdown
-st.subheader("1. Select School Location")
-
-location_options = ["-- Select Location Number --"] + [
-    f"{loc} - {data['name']}" for loc, data in sorted(school_data.items())
-]
-
-selected_option = st.selectbox(
-    "Search by 4-Digit Location Code or School Name", 
-    options=location_options
+uploaded_file = st.file_uploader(
+    "Choose a completed JV Excel File (.xlsx)", 
+    type=["xlsx"],
+    key=f"jv_uploader_{st.session_state['uploader_key']}"
 )
 
-selected_loc = selected_option.split(" - ")[0] if selected_option != "-- Select Location Number --" else None
-default_info = school_data.get(selected_loc, {"name": "", "address": "", "city_state_zip": ""})
-
-# Form Input Fields
-st.subheader("2. W-9 Field Values")
-col1, col2 = st.columns(2)
-
-with col1:
-    box2 = st.text_input(
-        "Box 2: Business/School Name",
-        value=default_info["name"],
-        placeholder="e.g. MIAMI BEACH SHS",
-    )
-    box5 = st.text_input(
-        "Box 5: Address",
-        value=default_info["address"],
-        placeholder="e.g. 2231 PRAIRIE AVENUE",
-    )
-    box6 = st.text_input(
-        "Box 6: City, State, ZIP",
-        value=default_info["city_state_zip"],
-        placeholder="e.g. MIAMI BEACH, FL 33139",
-    )
-
-with col2:
-    requester = st.text_area(
-        "Requester's Name and Address",
-        value="",
-        placeholder="e.g. Vendor/Company Name\n123 Business Way\nMiami, FL 33101",
-        height=100,
-    )
-    signature_date = st.text_input("Signature Date", value=today_date)
-
-# Process PDF when button is clicked
-if st.button("Generate W-9 PDF", type="primary"):
-    if not pdf_bytes:
-        st.error("No template available. Add `master_w9.pdf` to the folder or upload a PDF file.")
-    else:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        page = doc[0]
-
-        # 1. Strip ALL interactive form widgets to destroy internal AcroForm links
-        for widget in list(page.widgets()):
-            page.delete_widget(widget)
-
-        # 2. White-out Box 3b and Line 7 completely
-        page.add_redact_annot(fitz.Rect(470, 215, 530, 255), fill=(1, 1, 1))
-        page.add_redact_annot(fitz.Rect(45, 330, 300, 365), fill=(1, 1, 1))
-        page.apply_redactions()
-
-        # 3. Direct vector text placement (Static flattening)
-        if box2:
-            page.insert_textbox(
-                fitz.Rect(45, 138, 560, 165),
-                box2,
-                fontsize=11,
-                fontname="helv",
-                color=(0, 0, 0),
-                align=0,
-            )
-
-        if box5:
-            page.insert_textbox(
-                fitz.Rect(45, 275, 300, 305),
-                box5,
-                fontsize=11,
-                fontname="helv",
-                color=(0, 0, 0),
-                align=0,
-            )
-
-        if box6:
-            page.insert_textbox(
-                fitz.Rect(45, 310, 300, 330),
-                box6,
-                fontsize=11,
-                fontname="helv",
-                color=(0, 0, 0),
-                align=0,
-            )
-
-        if requester:
-            page.insert_textbox(
-                fitz.Rect(315, 275, 560, 355),
-                requester,
-                fontsize=7.5,
-                fontname="helv",
-                color=(0, 0, 0),
-                align=0,
-            )
-
-        if signature_date:
-            page.insert_textbox(
-                fitz.Rect(410, 575, 560, 595),
-                signature_date,
-                fontsize=11,
-                fontname="helv",
-                color=(0, 0, 0),
-                align=0,
-            )
-
-        # 4. Remove AcroForm root dictionary catalog
-        catalog = doc.pdf_catalog()
-        if doc.xref_get_key(catalog, "AcroForm")[0] != "null":
-            doc.update_object(catalog, "<< /AcroForm null >>")
-
-        output_buffer = io.BytesIO()
-        doc.save(output_buffer)
-        doc.close()
-        final_pdf = output_buffer.getvalue()
-
-        st.success("W-9 Form generated successfully!")
-
-        filename = f"W9_{box2.strip().replace(' ', '_')}.pdf" if box2.strip() else "Completed_W9.pdf"
+if uploaded_file is not None:
+    st.info("File loaded successfully. Analyzing data structures...")
+    
+    success, errors, debits, credits, sap_txt_output = process_and_validate_jv(uploaded_file)
+    
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        st.metric(label="Calculated Total Debits", value=f"${debits:,.2f}")
+    with col2:
+        st.metric(label="Calculated Total Credits", value=f"${credits:,.2f}")
+    with col3:
+        st.write("")
+        st.write("")
+        if st.button("🔄 Upload New JV", use_container_width=True):
+            st.session_state["uploader_key"] += 1
+            st.rerun()
+        
+    if success:
+        st.write("") 
+        st.success("🎉 Perfect! Your spreadsheet passed all date constraints, digit matching structure layouts, and balances perfectly!")
+        
         st.download_button(
-            label="📥 Download Completed W-9 PDF",
-            data=final_pdf,
-            file_name=filename,
-            mime="application/pdf",
+            label="💾 Download Ready SAP Text File (.txt)",
+            data=sap_txt_output,
+            file_name=f"SAP_JV_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain"
         )
+    else:
+        st.write("") 
+        st.error("❌ Structural Validation Failed! Please resolve the following errors inside your spreadsheet and re-upload:")
+        for err in errors:
+            st.markdown(f"* {err}")
