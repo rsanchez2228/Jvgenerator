@@ -189,15 +189,14 @@ if st.button("Generate W-9 PDF", type="primary"):
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         page = doc[0]
 
-        # 1. Whiteout Box 3b area visually to wipe any pre-printed symbols
-        box3b_rect = fitz.Rect(450, 200, 530, 260)
+        # 1. Whiteout Box 3b area visually to erase any stray artwork/boxes
+        box3b_rect = fitz.Rect(480, 210, 540, 260)
         page.add_redact_annot(box3b_rect, fill=(1, 1, 1))
-        page.apply_redactions()
 
         widgets = list(page.widgets())
 
         if widgets:
-            # First Pass: Delete unwanted widgets (Line 7 and Box 3b)
+            # First Pass: Unlink and delete Line 7 and Box 3b widgets
             for widget in list(page.widgets()):
                 rect = widget.rect
                 if not rect:
@@ -205,9 +204,10 @@ if st.button("Generate W-9 PDF", type="primary"):
                 # Remove Line 7 widget
                 if 325 <= rect.y0 < 365 and rect.x0 < 300:
                     page.delete_widget(widget)
-                # Remove Box 3b widget completely
-                elif 200 <= rect.y0 < 265 and rect.x0 >= 350:
+                # Unlink & remove Box 3b widget completely
+                elif 200 <= rect.y0 < 265 and rect.x0 >= 440:
                     widget.field_value = ""
+                    widget.field_name = f"unlinked_3b_{rect.y0}"
                     widget.update()
                     page.delete_widget(widget)
 
@@ -229,7 +229,7 @@ if st.button("Generate W-9 PDF", type="primary"):
                     widget.field_value = box6
                     widget.text_fontsize = 11
                     widget.update()
-                # Requester box (starts strictly at y >= 265)
+                # Requester box (starts strictly at y >= 265, x0 >= 300)
                 elif 265 <= rect.y0 < 365 and rect.x0 >= 300:
                     widget.field_value = requester
                     widget.text_fontsize = 7.5
@@ -238,6 +238,7 @@ if st.button("Generate W-9 PDF", type="primary"):
                     widget.field_value = signature_date
                     widget.text_fontsize = 11
                     widget.update()
+
         else:
             targets = [
                 {"rect": fitz.Rect(45, 140, 560, 160), "text": box2, "size": 11},
@@ -250,6 +251,14 @@ if st.button("Generate W-9 PDF", type="primary"):
                 page.add_redact_annot(item["rect"], fill=(1, 1, 1))
                 page.apply_redactions()
                 page.insert_textbox(item["rect"], item["text"], fontsize=item["size"], fontname="helv", color=(0, 0, 0), align=0)
+
+        # Apply redactions to permanently seal the whiteout over Box 3b
+        page.apply_redactions()
+
+        # Flatten all form fields so PDF viewers cannot execute linked AcroForm auto-fill rules
+        catalog = doc.pdf_catalog()
+        if doc.xref_get_key(catalog, "AcroForm")[0] != "null":
+            doc.update_object(catalog, "<< /AcroForm null >>")
 
         output_buffer = io.BytesIO()
         doc.save(output_buffer)
